@@ -13,7 +13,7 @@ from sqlalchemy.future import select
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-async def check_device_existing_data_helper(mobile_number:str, subscriber_mysql_session:AsyncSession):
+async def check_device_existing_data_helper(mobile_number:str, subscriber_mysql_session:AsyncSession, token, device_id):
     """
     Checks if a device ID already exists for a given mobile number in the database.
 
@@ -27,9 +27,9 @@ async def check_device_existing_data_helper(mobile_number:str, subscriber_mysql_
     """
     try:
         existing_data = await subscriber_mysql_session.execute(
-            select(UserDevice).where(UserDevice.mobile_number == mobile_number, UserDevice.app_name=="SUBSCRIBER")
+            select(UserDevice).where(UserDevice.mobile_number == mobile_number, UserDevice.app_name=="SUBSCRIBER", UserDevice.token==token, UserDevice.device_id==device_id)
         )
-        result = existing_data.scalars().all()
+        result = existing_data.scalars().first()
         return result if result else "unique"
     except HTTPException as http_exc:
         raise http_exc
@@ -40,7 +40,7 @@ async def check_device_existing_data_helper(mobile_number:str, subscriber_mysql_
         logger.error(f"Unexpected error checking device data: {exe}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-async def device_data_update_helper(token:str, device_id:str, active_flag:int, subscriber_mysql_session:AsyncSession):
+async def device_data_update_helper(mobile, token:str, device_id:str, active_flag:int, subscriber_mysql_session:AsyncSession):
     """
     Updates the device ID for a given mobile number in the database.
 
@@ -55,11 +55,12 @@ async def device_data_update_helper(token:str, device_id:str, active_flag:int, s
     """
     try:
         existing_data = await subscriber_mysql_session.execute(
-            select(UserDevice).where(UserDevice.token == token, UserDevice.device_id==device_id, UserDevice.app_name=="SUBSCRIBER")
+            select(UserDevice).where(UserDevice.token == token, UserDevice.device_id==device_id, UserDevice.app_name=="SUBSCRIBER", UserDevice.mobile_number==mobile)
         )
         result = existing_data.scalars().first()
         if result:
             result.active_flag = active_flag
+            result.updated_at = datetime.now()
             await subscriber_mysql_session.flush()
             await subscriber_mysql_session.refresh(result)
             return True
@@ -72,6 +73,21 @@ async def device_data_update_helper(token:str, device_id:str, active_flag:int, s
         raise HTTPException(status_code=500, detail="Database error occurred")
     except Exception as exe:
         logger.error(f"Unexpected error updating device data: {exe}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+async def get_device_data_active(mobile, subscriber_mysql_session:AsyncSession):
+    try:
+        existing_data = await subscriber_mysql_session.execute(select(UserDevice).where(UserDevice.active_flag==1, UserDevice.mobile_number==int(mobile)))
+        result = existing_data.scalars().first()
+        print(result.active_flag, result.device_id)
+        return result if result!=None else None
+    except HTTPException as http_exc:
+        raise http_exc
+    except SQLAlchemyError as e:
+        logger.error(f"SQLAlchemy error getting device data: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")
+    except Exception as exe:
+        logger.error(f"Unexpected error getting device data: {exe}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 async def subscriber_setprofile_dal(

@@ -5,9 +5,9 @@ import logging
 from typing import List, Dict
 from datetime import datetime
 from ..models.subscriber import ServiceProvider, ServiceProviderCategory, ServiceSubType, ServiceType, Subscriber, Address, DCAppointments, DCAppointmentPackage, FamilyMember, DCPackage, TestPanel, TestProvided, SubscriberAddress
-from ..schemas.subscriber import SubscriberMessage, CreateSpecialization, CreateDCAppointment, UpdateDCAppointment, CancelDCAppointment
+from ..schemas.subscriber import SubscriberMessage, CreateSpecialization, CreateDCAppointment, UpdateDCAppointment, CancelDCAppointment, DClistforTest
 from ..utils import check_data_exist_utils, id_incrementer, entity_data_return_utils, get_data_by_id_utils, get_data_by_mobile
-from ..crud.subscriber_dc import get_hubby_dc_dal, get_dc_provider, create_dc_booking_dal, update_dc_booking_dal, cancel_dc_booking_dal, dc_booking_package_dal, get_upcoming_dc_booking_dal, get_past_dc_booking_dal
+from ..crud.subscriber_dc import get_hubby_dc_dal, get_dc_provider, create_dc_booking_dal, update_dc_booking_dal, cancel_dc_booking_dal, dc_booking_package_dal, get_upcoming_dc_booking_dal, get_past_dc_booking_dal, dclistfortest_package_dal, dclistfortest_test_dal
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ async def create_dc_booking_bl(appointment: CreateDCAppointment, subscriber_mysq
                 dc_appointment_id=dc_booking_id,
                 appointment_date=date,
                 reference_id=appointment.reference_id,
-                prescription_image=appointment.prescription_image,
+                prescription_image=appointment.prescription_image or None,
                 status="Scheduled",
                 homecollection=appointment.homecollection,
                 address_id=appointment.address_id,
@@ -338,7 +338,7 @@ async def past_dc_booking_bl(subscriber_mysql_session: AsyncSession, subscriber_
                     "service_provider_mobile": service_provider.get("sp_mobilenumber"),
                     "package_details": await get_package_details_helper(
                         package_id=dc_appointment_package.get("package_id"), subscriber_mysql_session=subscriber_mysql_session
-                    ),
+                    )
                 })
             return past_appointments
         except HTTPException as http_exc:
@@ -374,6 +374,75 @@ async def get_dc_appointments_bl(subscriber_mobile: str, subscriber_mysql_sessio
         logger.error(f"Error in fetching the DC booking details: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error in fetching the DC booking details")  
 
+async def dclistfortest_bl(dclist:DClistforTest, subscriber_mysql_session:AsyncSession):
+    try:
+        if dclist.pannel_id == None and dclist.test_id == None:
+            raise HTTPException(status_code=400, detail="Invalid request")
+
+        pannel_data = []
+        if dclist.pannel_id!=None:
+            # getting the pannel ids
+            for pannel_id in dclist.pannel_id:
+                # getting the package, serviceprovider details
+                dc_data = await dclistfortest_package_dal(pannel_id=pannel_id, subscriber_mysql_session=subscriber_mysql_session)
+                # if the data presents
+                if dc_data:
+                    # loops the data from dc_data ["dc_package", "service_provider"]
+                    for dc in dc_data:
+                        dc_package = dc["dc_package"]
+                        dc_service_provider = dc["service_provider"]
+                        pannel_data.append({
+                            "panel_id": dc_package.get("panel_ids"),
+                            "package_name": dc_package.get("package_name"),
+                            "rate": dc_package.get("rate"),
+                            "sp_id": dc_service_provider.get("sp_id"),
+                            "sp_firstname": dc_service_provider.get("sp_firstname"),
+                            "sp_lastname": dc_service_provider.get("sp_lastname"),
+                            "sp_mobilenumber": dc_service_provider.get("sp_mobilenumber"),
+                            "agency": dc_service_provider.get("agency"),
+                            "service_category_id": dc_service_provider.get("service_category_id"),
+                            "service_category_name": (await get_data_by_id_utils(table=ServiceProviderCategory, field="service_category_id", subscriber_mysql_session=subscriber_mysql_session, data=dc_service_provider.get("service_category_id"))).service_category_name,
+                            "sp_address": dc_service_provider.get("sp_address"),
+                            "package_details": await get_package_details_helper(
+                                package_id=dc_package.get("package_id"), subscriber_mysql_session=subscriber_mysql_session
+                            ) 
+                        })
+        
+        test_list=[]
+        if dclist.test_id!=None:
+            # getting the test ids
+            for test_id in dclist.test_id:
+                # getting the test_id and the packages
+                test_data = await dclistfortest_test_dal(test_id=test_id, subscriber_mysql_session=subscriber_mysql_session)
+                # if the data presents
+                if test_data:
+                    for test in test_data:
+                        test_package = test["dc_package"]
+                        test_service_provider = test["service_provider"]
+                        test_list.append({
+                            "panel_id": test_package.get("panel_ids"),
+                            "package_name": test_package.get("package_name"),
+                            "rate": test_package.get("rate"),
+                            "sp_id": test_service_provider.get("sp_id"),
+                            "sp_firstname": test_service_provider.get("sp_firstname"),
+                            "sp_lastname": test_service_provider.get("sp_lastname"),
+                            "sp_mobilenumber": test_service_provider.get("sp_mobilenumber"),
+                            "agency": test_service_provider.get("agency"),
+                            "service_category_id": test_service_provider.get("service_category_id"),
+                            "service_category_name": (await get_data_by_id_utils(table=ServiceProviderCategory, field="service_category_id", subscriber_mysql_session=subscriber_mysql_session, data=test_service_provider.get("service_category_id"))).service_category_name,
+                            "sp_address": test_service_provider.get("sp_address"),
+                            "package_details": await get_package_details_helper(
+                                package_id=test_package.get("package_id"), subscriber_mysql_session=subscriber_mysql_session
+                            ) 
+                        })
+                    
+        return {"pannel":pannel_data, "test":test_list}
+    except SQLAlchemyError as e:
+        logger.error(f"Error in fetching the DC booking details: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error in fetching the DC booking details:" + str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error in fetching the DC booking details:" + str(e))                      
+        
 async def get_package_details_helper(
     package_id: str, 
     subscriber_mysql_session: AsyncSession
@@ -401,7 +470,7 @@ async def get_package_details_helper(
                 "rate": package_data.rate,
                 "test_id": test_id,           
                 "package_test": await get_test_helper(
-                    test_id=test_id, subscriber_mysql_session=subscriber_mysql_session
+                test_id=test_id, subscriber_mysql_session=subscriber_mysql_session
                 )
             })
         
@@ -413,9 +482,9 @@ async def get_package_details_helper(
             )
             package_list.append({
                 "rate": package_data.rate,
-                "pannel_id": pannel_data.panel_id,
-                "pannel_name": pannel_data.panel_name,
-                "pannel_test": await get_test_helper(
+                "panel_id": pannel_data.panel_id,
+                "panel_name": pannel_data.panel_name,
+                "panel_test": await get_test_helper(
                     test_id=pannel_data.test_ids, subscriber_mysql_session=subscriber_mysql_session
                 )if pannel_data.test_ids!=None else None
             })
@@ -430,7 +499,7 @@ async def get_package_details_helper(
         raise HTTPException(status_code=500, detail="Internal Server Error in fetching the package details")
 
 async def get_test_helper(
-    test_id: str,
+    test_id,
     subscriber_mysql_session: AsyncSession
     ):
     """
@@ -444,16 +513,19 @@ async def get_test_helper(
         List[dict]: A list of dictionaries containing test panel details.
     """
     try:
-        test_data = await get_data_by_id_utils(table=TestProvided, field="test_id", subscriber_mysql_session=subscriber_mysql_session, data=test_id)
-        test_details = {
+        test_list=[]
+        for test_id in test_id.split(","):
+            test_data = await get_data_by_id_utils(table=TestProvided, field="test_id", subscriber_mysql_session=subscriber_mysql_session, data=test_id)
+            test_details = {
                 "test_id": test_data.test_id,
                 "test_name": test_data.test_name,
                 "sample": test_data.sample,
                 "home_collection": test_data.home_collection,
                 "prerequisites": test_data.prerequisites,
                 "description": test_data.description
-            }
-        return test_details
+                }
+            test_list.append(test_details)
+        return test_list
     except HTTPException as http_exc:
         raise http_exc
     except SQLAlchemyError as e:
@@ -462,4 +534,3 @@ async def get_test_helper(
     except Exception as e:
         logger.error(f"Error in fetching the test panel details: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error in fetching the test panel details")
-

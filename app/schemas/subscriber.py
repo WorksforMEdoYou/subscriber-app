@@ -189,7 +189,6 @@ class CancelAppointment(BaseModel):
     Pydantic Model for the Appointment
     """
     appointment_id: str
-    doctor_id: str
     subscriber_mobile: constr(max_length=15)
     active_flag: int
     class Config:
@@ -219,6 +218,7 @@ class SubscriberStoreSearch(BaseModel):
     subscriber_id: str
     subscriber_latitude: float
     subscriber_longitude: float 
+    radius_km: int
     cart_products: List[SubscriberCartProduct]
     
     class Config:
@@ -304,7 +304,7 @@ class CreateDCAppointment(BaseModel):
     """
     appointment_date: constr(max_length=45)
     reference_id: str
-    prescription_image: str
+    prescription_image: Optional[str]
     homecollection: str
     address_id: str
     book_for_id: Optional[str]
@@ -321,7 +321,7 @@ class UpdateDCAppointment(BaseModel):
     dc_appointment_id: constr(max_length=255)
     appointment_date: constr(max_length=45)
     reference_id: str
-    prescription_image: str
+    prescription_image: Optional[str]
     homecollection: str
     address_id: str
     book_for_id: Optional[str]
@@ -337,4 +337,46 @@ class CancelDCAppointment(BaseModel):
     dc_appointment_id: constr(max_length=255)
     active_flag: int
     
+class DClistforTest(BaseModel):
+    """
+    Base Model For the DC List For Test
+    """
+    subscriber_address_id: str
+    pannel_id: Optional[List[str]] = None
+    test_id: Optional[List[str]] = None
 
+class CreateNursingParameter(BaseModel):
+    """
+    Base Model For the Create Nursing Parameter
+    """
+    sp_appointment_id: str
+    vitals_id: List[int]
+    vitals_frequency_id: int
+
+class MedicineList(BaseModel):
+    """
+    Base Model For the Medicine List
+    """
+    medicine_name: str
+    dosage_timing: str
+    medication_timing: str
+    
+class FoodIntake(BaseModel):
+    """
+    Base Model For the Food Intake
+    """
+    morning: str
+    afternoon: str
+    evening: str
+    dinner: str
+
+class CreateMedicineIntake(BaseModel):
+    """
+    Base Model For the Create Medicine Intake
+    """
+    sp_appointment_id: str
+    prescription_id: Optional[str] = None
+    food_intake_timing: FoodIntake
+    medicines_list: Optional[List[MedicineList]] = None
+
+    

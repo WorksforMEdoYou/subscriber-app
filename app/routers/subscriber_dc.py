@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from ..db.subscriber_mysqlsession import get_async_subscriberdb
-from ..schemas.subscriber import SubscriberMessage, CreateDCAppointment, UpdateDCAppointment, CancelDCAppointment
+from ..schemas.subscriber import SubscriberMessage, CreateDCAppointment, UpdateDCAppointment, CancelDCAppointment, DClistforTest
 import logging
-from ..service.subscriber_dc import get_hubby_dc_bl, create_dc_booking_bl, update_dc_booking_bl, cancel_dc_booking_bl, upcoming_dc_booking_bl, past_dc_booking_bl, get_dc_appointments_bl
+from ..service.subscriber_dc import get_hubby_dc_bl, create_dc_booking_bl, update_dc_booking_bl, cancel_dc_booking_bl, upcoming_dc_booking_bl, past_dc_booking_bl, get_dc_appointments_bl, dclistfortest_bl
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -249,4 +249,32 @@ async def get_dc_appointments_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error in fetching the DC appointments"
         )
-       
+
+
+@router.post("/subscriber/dclistfortest/", status_code=status.HTTP_200_OK)
+async def get_dc_list_for_test_endpoint(
+    dclist: DClistforTest,
+    subscriber_mysql_session: AsyncSession = Depends(get_async_subscriberdb)
+    ):
+    """
+    Retrieve a list of DCs for a test.
+    
+    Args:
+        dclist (DClistforTest): The DC list for the test.
+        subscriber_mysql_session (AsyncSession): Database session dependency.
+    
+    Returns:
+        list: A list of DCs for the test.
+    """
+    try:
+        dclist = await dclistfortest_bl(dclist=dclist, subscriber_mysql_session=subscriber_mysql_session)
+        return dclist
+    except HTTPException as http_exc:
+        raise http_exc
+    except SQLAlchemyError as e:
+        logger.error(f"Error in fetching the DC list for the test {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error in fetching the DC booking details:" + str(e))
+    except Exception as e:  
+        logger.error(f"Error in fetching the DC list for the test {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error in fetching the DC booking details:" + str(e))
+

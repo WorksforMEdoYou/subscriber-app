@@ -492,7 +492,7 @@ class ServiceProviderAppointment(Base):
     book_for_id = Column(String(255), doc="Book for ID")
     subscriber_id = Column(String(255), doc="Subscriber ID")
     sp_id = Column(String(255), ForeignKey('tbl_serviceprovider.sp_id'), doc="Service Provider ID")
-    service_package_id = Column(String(255), doc="Service Package ID")
+    service_package_id = Column(String(255), ForeignKey('tbl_servicepackage.service_package_id'), doc="Service Package ID")
     service_subtype_id = Column(String(255), ForeignKey('tbl_service_subtype.service_subtype_id'), doc="Service Subtype ID")
     created_at = Column(DateTime, doc="Created at")
     updated_at = Column(DateTime, doc="Updated at")
@@ -503,6 +503,34 @@ class ServiceProviderAppointment(Base):
 
     service_provider = relationship("ServiceProvider", back_populates="appointments")
     service_subtype = relationship("ServiceSubType", back_populates="appointments")
+    vitals_request = relationship("VitalsRequest", back_populates="sp_appointment")
+    vitals_log = relationship("VitalsLog", back_populates="sp_appointment")
+    drug_logs = relationship("DrugLog", back_populates="sp_appointment")
+    service_package = relationship("ServicePackage", back_populates="appointments")
+    
+class ServicePackage(Base):
+    __tablename__ = 'tbl_servicepackage'
+
+    service_package_id = Column(String(255), primary_key=True, doc="Service Package ID")
+    session_time = Column(String(45), doc="Session Time")
+    session_frequency = Column(String(45), doc="Session Frequency")
+    rate = Column(DECIMAL(10, 2), doc="Rate")
+    discount = Column(DECIMAL(5, 2), doc="Discount")
+    sp_id = Column(String(255), ForeignKey('tbl_serviceprovider.sp_id'), doc="Service Provider ID")
+    service_type_id = Column(String(255), ForeignKey('tbl_servicetype.service_type_id'), doc="Service Type ID")
+    service_subtype_id = Column(String(255), ForeignKey('tbl_service_subtype.service_subtype_id'), doc="Service Subtype ID")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(45), doc="Created By")
+    updated_by = Column(String(45), doc="Updated By")
+    deleted_by = Column(String(45), doc="Deleted By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    visittype = Column(String(45), doc="Visit Type")
+
+    service_provider = relationship("ServiceProvider", backref="service_packages")
+    service_type = relationship("ServiceType", backref="service_packages")
+    service_subtype = relationship("ServiceSubType", backref="service_packages")
+    appointments = relationship("ServiceProviderAppointment", back_populates="service_package")
     
 class DCAppointments(Base):
     __tablename__ = 'tbl_dc_appointments'
@@ -603,3 +631,112 @@ class UserAuth(Base):
     updated_by = Column(String(45), doc="Updated By")
     deleted_by = Column(String(45), doc="Deleted By")
     active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    
+class Vitals(Base):
+    __tablename__ = 'tbl_vitals'
+
+    vitals_id = Column(Integer, primary_key=True, autoincrement=True, doc="Vitals ID")
+    vitals_name = Column(String(255), doc="Vitals Name")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+
+class VitalsRequest(Base):
+    __tablename__ = 'tbl_vitals_request'
+
+    vitals_request_id = Column(Integer, primary_key=True, autoincrement=True, doc="Vitals Request ID")
+    appointment_id = Column(String(255), ForeignKey('tbl_sp_appointments.sp_appointment_id'), doc="Appointment ID")
+    vitals_requested = Column(String(255), doc="Vitals Requested")
+    vital_frequency_id = Column(Integer, ForeignKey('tbl_vital_frequency.vital_frequency_id'), doc="Vital Frequency ID")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    
+    vital_frequency = relationship("VitalFrequency", back_populates="vitals_request")
+    sp_appointment = relationship("ServiceProviderAppointment", back_populates="vitals_request")
+    vitals_times = relationship("VitalsTime", back_populates="vitals_request")
+    vitals_logs = relationship("VitalsLog", back_populates="vitals_request")
+    
+class VitalsTime(Base):
+    __tablename__ = 'tbl_vitals_time'
+
+    vitals_time_id = Column(Integer, primary_key=True, autoincrement=True, doc="Vitals Time ID")
+    vitals_request_id = Column(Integer, ForeignKey('tbl_vitals_request.vitals_request_id'), doc="Vitals Request ID")
+    vital_time = Column(Time, doc="Time of the vital")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+
+    vitals_request = relationship("VitalsRequest", back_populates="vitals_times")
+
+class VitalFrequency(Base):
+    __tablename__ = 'tbl_vital_frequency'
+
+    vital_frequency_id = Column(Integer, primary_key=True, autoincrement=True, doc="Vital Frequency ID")
+    session_frequency = Column(String(255), doc="Session Frequency")
+    session_time = Column(Integer, doc="Session Time")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    
+    vitals_request = relationship("VitalsRequest", back_populates="vital_frequency")
+    
+class Medications(Base):
+    __tablename__ = 'tbl_medications'
+
+    medications_id = Column(Integer, primary_key=True, autoincrement=True, doc="Medications ID")
+    appointment_id = Column(String(255), ForeignKey('tbl_sp_appointments.sp_appointment_id'), doc="Appointment ID")
+    medicine_name = Column(String(255), doc="Medicine Name")
+    quantity = Column(String(255), doc="Quantity")
+    dosage_timing = Column(String(45), doc="Dosage Timing")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    prescription_id = Column(String(255), ForeignKey('tbl_prescription.prescription_id'), doc="Prescription ID")
+    medication_timing = Column(String(45), doc="Medication Timing")
+    intake_timing = Column(Time, doc="Intake Timing")
+
+    drug_logs = relationship("DrugLog", back_populates="medications")
+    
+class VitalsLog(Base):
+    __tablename__ = 'tbl_vitals_log'
+
+    vitals_log_id = Column(Integer, primary_key=True, autoincrement=True, doc="Vitals Log ID")
+    appointment_id = Column(String(255), ForeignKey('tbl_sp_appointments.sp_appointment_id'), doc="Appointment ID")
+    vital_log = Column(String(600), doc="Vital Log")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    vitals_on = Column(DateTime, doc="Date and Time")
+    vitals_request_id = Column(Integer, ForeignKey('tbl_vitals_request.vitals_request_id'), doc="Vitals Request ID")
+
+    vitals_request = relationship("VitalsRequest", back_populates="vitals_logs")
+    sp_appointment = relationship("ServiceProviderAppointment", back_populates="vitals_log")
+
+class DrugLog(Base):
+    __tablename__ = 'tbl_drug_log'
+
+    drug_log_id = Column(Integer, primary_key=True, autoincrement=True, doc="Drug Log ID")
+    appointment_id = Column(String(255), ForeignKey('tbl_sp_appointments.sp_appointment_id'), doc="Appointment ID")
+    medications_id = Column(Integer, ForeignKey('tbl_medications.medications_id'), doc="Medications ID")
+    created_at = Column(DateTime, doc="Created At")
+    updated_at = Column(DateTime, doc="Updated At")
+    created_by = Column(String(255), doc="Created By")
+    updated_by = Column(String(255), doc="Updated By")
+    active_flag = Column(Integer, doc="Active Flag (0 or 1)")
+    medications_on = Column(DateTime, doc="Date and Time")
+    
+    sp_appointment = relationship("ServiceProviderAppointment", back_populates="drug_logs")
+    medications = relationship("Medications", back_populates="drug_logs")

@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import logging
 from typing import List
 from datetime import datetime
-from ..models.subscriber import ServiceProvider, ServiceProviderCategory, ServiceSubType, ServiceType, DCAppointments, DCAppointmentPackage, Address
+from ..models.subscriber import ServiceProvider, ServiceProviderCategory, ServiceSubType, ServiceType, DCAppointments, DCAppointmentPackage, Address, DCPackage
 from ..schemas.subscriber import SubscriberMessage, UpdateDCAppointment, CancelDCAppointment
 from ..utils import check_data_exist_utils, id_incrementer, entity_data_return_utils, get_data_by_id_utils, get_data_by_mobile
 from sqlalchemy.future import select
@@ -157,7 +157,7 @@ async def update_dc_booking_dal(appointment: UpdateDCAppointment, subscriber_dat
         
         dc_appointment.appointment_date = date
         dc_appointment.reference_id = appointment.reference_id
-        dc_appointment.prescription_image = appointment.prescription_image
+        dc_appointment.prescription_image = appointment.prescription_image or None
         dc_appointment.status = "Rescheduled"
         dc_appointment.homecollection = appointment.homecollection
         dc_appointment.address_id = appointment.address_id
@@ -165,7 +165,7 @@ async def update_dc_booking_dal(appointment: UpdateDCAppointment, subscriber_dat
         dc_appointment.subscriber_id = subscriber_data.subscriber_id
         dc_appointment.sp_id = sp_data.sp_id
         dc_appointment.updated_at = datetime.now()
-        
+
         dc_appointment_package_data = await subscriber_mysql_session.execute(
             select(DCAppointmentPackage).where(DCAppointmentPackage.dc_appointment_id == appointment.dc_appointment_id)
         )
@@ -350,3 +350,96 @@ async def get_past_dc_booking_dal(subscriber_id:str, subscriber_mysql_session: A
     except Exception as e:
         logger.error(f"Error occurred while fetching data from database: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+async def dclistfortest_package_dal(pannel_id: str, subscriber_mysql_session: AsyncSession):
+    """
+    Retrieves a list of DC packages and their associated service providers for a given panel ID.
+
+    Args:
+        pannel_id (str): The unique ID of the panel.
+        subscriber_mysql_session (AsyncSession): An async database session for executing queries.
+
+    Returns:
+        list: A list of dictionaries containing DC package and service provider details.
+
+    Raises:
+        HTTPException: Raised for validation errors or known issues during query execution.
+        SQLAlchemyError: Raised for database-related issues.
+        Exception: Raised for unexpected errors.
+    """
+    try:
+        # Query the database for DC packages and their associated service providers
+        dc_list_data = await subscriber_mysql_session.execute(
+            select(DCPackage, ServiceProvider)
+            .join(ServiceProvider, ServiceProvider.sp_id == DCPackage.sp_id)
+            .where(DCPackage.panel_ids.contains(pannel_id))
+        )
+        results = dc_list_data.all()
+
+        # Convert results to a list of dictionaries for JSON serialization
+        serialized_results = []
+        for dc_package, service_provider in results:
+            serialized_results.append({
+                "dc_package": {
+                    key: value for key, value in dc_package.__dict__.items() if not key.startswith("_")
+                },
+                "service_provider": {
+                    key: value for key, value in service_provider.__dict__.items() if not key.startswith("_")
+                }
+            })
+
+        return serialized_results if serialized_results else None
+    except SQLAlchemyError as e:
+        logger.error(f"Error occurred while fetching data from database: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+async def dclistfortest_test_dal(test_id, subscriber_mysql_session: AsyncSession):
+    """
+    Fetches a list of data center (DC) packages and their associated service providers
+    based on the provided test ID. The query retrieves only active service providers
+    (those with an active_flag of 1) and DC packages containing the given test ID.
+
+    Args:
+        test_id (str): The ID of the test to filter DC packages.
+        subscriber_mysql_session (AsyncSession): An active SQLAlchemy asynchronous 
+            session for interacting with the database.
+
+    Returns:
+        list: A list of dictionaries, where each dictionary contains:
+            - 'dc_package': A dictionary representation of the DC package details.
+            - 'service_provider': A dictionary representation of the associated 
+              service provider details.
+
+    Raises:
+        HTTPException: If a database error or an unexpected error occurs, an 
+            HTTPException with a 500 status code is raised, along with an error message.
+
+    Logs:
+        Logs errors using the logger in case of SQLAlchemy or other exceptions.
+    """
+    try:
+        test_data = await subscriber_mysql_session.execute(
+            select(DCPackage, ServiceProvider)
+            .join(ServiceProvider, ServiceProvider.sp_id == DCPackage.sp_id)
+            .where(DCPackage.test_ids.contains(test_id), ServiceProvider.active_flag == 1)
+        )
+        results = test_data.all()
+        return [
+        {
+            "dc_package": {key: value for key, value in dc_package.__dict__.items() if not key.startswith("_")},
+            "service_provider": {key: value for key, value in service_provider.__dict__.items() if not key.startswith("_")}
+        }
+        for dc_package, service_provider in results
+        ]
+
+    except SQLAlchemyError as e:
+        logger.error(f"Error occurred while fetching data from database: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    except Exception as e:
+        logger.error(f"Unexpected error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+

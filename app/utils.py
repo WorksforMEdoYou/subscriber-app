@@ -1,6 +1,7 @@
 import os
 import shutil
-from .models.subscriber import IdGenerator
+from sqlalchemy import func
+from .models.subscriber import IdGenerator, StoreDetails
 from fastapi import File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
@@ -158,4 +159,41 @@ async def get_data_by_mobile(mobile, field: str, table, subscriber_mysql_session
     except SQLAlchemyError as e:
         logger.error(f"Database error while getting data by mobile in utils: {str(e)}")
         raise HTTPException(status_code=500, detail="Database error while getting data by mobile in utils")
+
+async def hyperlocal_search_store(user_lat: float, user_lon: float, radius_km: float, subscriber_mysql_session: AsyncSession):
+    """
+    Perform a hyperlocal store search based on user location and a specified search radius.
+
+    Args:
+        user_lat (float): Latitude of the user's location.
+        user_lon (float): Longitude of the user's location.
+        radius_km (float): Radius (in kilometers) within which stores should be searched.
+        subscriber_mysql_session (AsyncSession): Database session used for executing queries.
+
+    Returns:
+        list: A list of store mobile numbers within the specified radius, ordered by proximity.
+
+    Raises:
+        HTTPException: If an SQLAlchemyError or any other exception occurs during the search operation.
+    """
+    try:
+        distance_expr = 6371 * func.acos(
+            func.cos(func.radians(user_lat)) *
+            func.cos(func.radians(StoreDetails.latitude)) *
+            func.cos(func.radians(StoreDetails.longitude) - func.radians(user_lon)) +
+            func.sin(func.radians(user_lat)) *
+            func.sin(func.radians(StoreDetails.latitude))
+        )
+        stmt = select(StoreDetails.mobile).where(distance_expr <= radius_km).order_by(distance_expr.asc())
+        result = await subscriber_mysql_session.execute(stmt)
+        return result.scalars().all()
+    except SQLAlchemyError as e:
+        logger.error(f"Something went wrong in hyperloacal searching: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Something went wrong in hyperloacal searching: {str(e)}")
+    except Exception as e:
+        logger.error(f"Something went wrong in hyperloacal searching: {str(e)}")
+        
+
+        
+        
 

@@ -126,7 +126,7 @@ async def cancel_appointment_dal(appointment: CancelAppointment, subscriber_id: 
     """
 
     try:
-        result = await subscriber_mysql_session.execute(select(DoctorAppointment).filter_by(appointment_id=appointment.appointment_id, doctor_id=appointment.doctor_id, subscriber_id=subscriber_id))
+        result = await subscriber_mysql_session.execute(select(DoctorAppointment).filter_by(appointment_id=appointment.appointment_id, subscriber_id=subscriber_id))
         appointment_data = result.scalars().first()
         if appointment_data:
             appointment_data.active_flag = appointment.active_flag

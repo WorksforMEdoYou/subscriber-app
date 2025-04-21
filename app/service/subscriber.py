@@ -9,7 +9,7 @@ from datetime import datetime
 from ..models.subscriber import Address, Subscriber, SubscriberAddress, Specialization, UserDevice, UserAuth
 from ..schemas.subscriber import SubscriberSetProfile, UpdateSubscriber, SubscriberMessage, CreateSpecialization, CreateSubscriberAddress, UpdateSubscriberAddress, SubscriberSignup, SubscriberLogin, SubscriberSetMpin, SubscriberUpdateMpin
 from ..utils import check_data_exist_utils, id_incrementer, entity_data_return_utils, get_data_by_id_utils, get_data_by_mobile
-from ..crud.subscriber import check_device_existing_data_helper, subscriber_setprofile_dal, get_subscriber_profile_dal, update_subscriber_dal, create_subscriber_address_dal, update_subscriber_address_dal, view_subscriber_address_dal, list_subscriber_address_dal, create_user_device_dal, create_subscriber_signup_dal, subscriber_login_dal, subscriber_setmpin_dal, subscriber_updatempin_dal, device_data_update_helper
+from ..crud.subscriber import check_device_existing_data_helper, subscriber_setprofile_dal, get_subscriber_profile_dal, update_subscriber_dal, create_subscriber_address_dal, update_subscriber_address_dal, view_subscriber_address_dal, list_subscriber_address_dal, create_user_device_dal, create_subscriber_signup_dal, subscriber_login_dal, subscriber_setmpin_dal, subscriber_updatempin_dal, get_device_data_active, device_data_update_helper
 
 from ..service.subscriber_dc import get_hubby_dc_bl
 from ..service.subscriber_sp import get_hubby_sp_bl
@@ -19,7 +19,7 @@ from ..service.subscriber_appointments import health_hub_stacks_bl
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-async def subscriber_signup_bl(subscriber_signup: SubscriberSignup, subscriber_mysql_session: AsyncSession):
+""" async def subscriber_signup_bl(subscriber_signup: SubscriberSignup, subscriber_mysql_session: AsyncSession):
     async with subscriber_mysql_session.begin():
         try:
             # Check if the subscriber already exists by mobile number
@@ -126,7 +126,103 @@ async def subscriber_signup_bl(subscriber_signup: SubscriberSignup, subscriber_m
         except Exception as e:
             logger.error(f"Error occurred while signing up subscriber BL: {e}")
             raise HTTPException(status_code=500, detail="Internal Server Error BL")
+ """
+async def subscriber_signup_bl(subscriber_signup:SubscriberSignup, subscriber_mysql_session:AsyncSession):
+    async with subscriber_mysql_session.begin():
+        try:
+            # Check if the subscriber already exists by mobile number
+            subscriber_data = await check_data_exist_utils(
+                table=Subscriber, field="mobile", subscriber_mysql_session=subscriber_mysql_session, data=subscriber_signup.mobile
+            )
+            #check the subscriber device allready exist
+            token_exist = await check_device_existing_data_helper(mobile_number=subscriber_signup.mobile, subscriber_mysql_session=subscriber_mysql_session, token=subscriber_signup.token, device_id=subscriber_signup.device_id)
+            
+            if subscriber_data=="unique" and token_exist=="unique":
+                new_subscriber_data = await subscriber_profile_helper(subscriber_signup=subscriber_signup, subscriber_mysql_session=subscriber_mysql_session)
+                new_device_data = await subscriber_device_helper(subscriber_signup=subscriber_signup)
+                await create_subscriber_signup_dal(subscriber_data=new_subscriber_data, subscriber_mysql_session=subscriber_mysql_session)
+                await create_user_device_dal(user_device=new_device_data, subscriber_mysql_session=subscriber_mysql_session)
+                await subscriber_mysql_session.commit()
+            else:
+                existing_device = await get_device_data_active(mobile=subscriber_signup.mobile, subscriber_mysql_session=subscriber_mysql_session)
+                await device_data_update_helper(mobile=existing_device.mobile_number, token=existing_device.token, device_id=existing_device.device_id, active_flag=0, subscriber_mysql_session=subscriber_mysql_session)
+                
+                if(subscriber_data!="unique" and token_exist!="unique"):
+                    if(token_exist.token==subscriber_signup.token and token_exist.device_id==subscriber_signup.device_id):
+                        await device_data_update_helper(
+                            mobile=subscriber_signup.mobile,
+                            token=subscriber_signup.token,
+                            device_id=subscriber_signup.device_id,
+                            active_flag=1,
+                            subscriber_mysql_session=subscriber_mysql_session
+                        )
+                        await subscriber_mysql_session.commit()
+                        raise HTTPException(status_code=400, detail="Subscriber Allready Exist Please login")
+                elif subscriber_data != "unique" and token_exist == "unique":
+                    new_device_data = await subscriber_device_helper(subscriber_signup=subscriber_signup)
+                    await create_user_device_dal(user_device=new_device_data, subscriber_mysql_session=subscriber_mysql_session)
+                    await subscriber_mysql_session.commit()
+                elif subscriber_data != "unique" and token_exist != "unique" and token_exist.device_id == subscriber_signup.device_id and token_exist.token != subscriber_signup.token:
+                    new_device_data = await subscriber_device_helper(subscriber_signup=subscriber_signup)
+                    await create_user_device_dal(user_device=new_device_data, subscriber_mysql_session=subscriber_mysql_session)
+                    await subscriber_mysql_session.commit()
+            return SubscriberMessage(message="Subscriber Signup Successfully")
+        except SQLAlchemyError as e:
+            logger.error(f"Error occurred while signing up subscriber BL: {e}")
+            raise HTTPException(status_code=500, detail="Internal Server Error BL")
+        except HTTPException as http_exc:
+            raise http_exc
+        except Exception as e:
+            logger.error(f"Error occurred while signing up subscriber BL: {e}")
+            raise HTTPException(status_code=500, detail="Internal Server Error BL")
         
+async def subscriber_profile_helper(subscriber_signup: SubscriberSignup, subscriber_mysql_session: AsyncSession):
+    """
+    Helper function to create a new subscriber profile.
+
+    Args:
+        subscriber_signup (SubscriberSignup): The subscriber signup data.
+        subscriber_mysql_session (AsyncSession): The database session.
+
+    Returns:
+        Subscriber: The newly created subscriber data.
+    """
+    try:
+        # Generate a new subscriber ID
+        new_subscriber_id = await id_incrementer(entity_name="SUBSCRIBER", subscriber_mysql_session=subscriber_mysql_session)
+
+        # Create new subscriber data
+        new_subscriber_data = Subscriber(
+            subscriber_id=new_subscriber_id,
+            first_name=subscriber_signup.name,
+            mobile=subscriber_signup.mobile,
+            email_id=subscriber_signup.email_id if subscriber_signup.email_id else None,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            active_flag=1
+        )
+        return new_subscriber_data
+    except Exception as e:
+        logger.error(f"Error occurred while creating subscriber profile helper BL: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error helper BL")
+
+async def subscriber_device_helper(subscriber_signup: SubscriberSignup):
+    try:
+        # Create new user device data
+        new_user_device = UserDevice(
+            mobile_number=int(subscriber_signup.mobile),
+            device_id=subscriber_signup.device_id,
+            token=subscriber_signup.token,
+            app_name="SUBSCRIBER",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            active_flag=1
+            )
+        return new_user_device
+    except Exception as e:
+        logger.error(f"Error occurred while creating subscriber device helper BL: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error helper BL")
+
 async def subscriber_setprofile_bl(subscriber: SubscriberSetProfile, subscriber_mysql_session: AsyncSession):
     async with subscriber_mysql_session.begin(): # Outer transaction here
         try:

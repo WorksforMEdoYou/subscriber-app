@@ -7,7 +7,7 @@ from typing import List
 from datetime import datetime
 from ..models.subscriber import  Manufacturer, Category, Orders, OrderItem, OrderStatus, StoreDetails, MedicinePrescribed, productMaster, Subscriber, productMaster
 from ..schemas.subscriber import SubscriberMessage, SubscriberStoreSearch, CreateOrder, SubscriberCartProduct
-from ..utils import check_data_exist_utils, entity_data_return_utils , get_data_by_id_utils, id_incrementer, get_data_by_mobile
+from ..utils import check_data_exist_utils, entity_data_return_utils , get_data_by_id_utils, id_incrementer, get_data_by_mobile, hyperlocal_search_store
 from ..crud.subscriber_store import ( get_medicine_products_dal, create_order_dal, create_order_item_dal, create_order_status_dal, store_stock_check_dal, get_healthcare_products_dal, orders_list_dal, view_prescribed_products_dal, subscriber_hubbystore_dal, store_mobile, get_batch_pricing_dal)
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -189,7 +189,8 @@ async def store_search_bl(
         Exception: For any unexpected errors.
     """
     try:
-        hyper_local_search = await store_mobile(subscriber_mysql_session=subscriber_mysql_session)
+        #hyper_local_search = await store_mobile(subscriber_mysql_session=subscriber_mysql_session)
+        hyper_local_search = await hyperlocal_search_store(user_lat=search_data.subscriber_latitude, user_lon=search_data.subscriber_longitude, radius_km=search_data.radius_km, subscriber_mysql_session=subscriber_mysql_session)
         
         home_delivery_stores_list = []
         non_home_delivery_stores_list = []
@@ -225,7 +226,7 @@ async def store_search_bl(
                     "store_longitude": store_data.longitude,
                     "store_mobile": store_data.mobile,
                     "store_delivery_options": store_data.delivery_options,
-                    "store_product_price": product_price,
+                    "store_product_price": product_price
                 }
                 if store_data.delivery_options == "Home Delivery":
                     home_delivery_stores_list.append(store_info)
@@ -378,6 +379,7 @@ async def subscriber_order_by_prescription_bl(
                         data=item.medicine_name
                     )
                 ).product_id,
+                "product_name": item.medicine_name,
                 "quantity": (
                     await calculate_quantity_by_medicication_and_days(
                         dosage_timing=item.medication_timing,
@@ -387,45 +389,7 @@ async def subscriber_order_by_prescription_bl(
             }
             for item in product_prescribed
         ]
-
-        hyper_local = await store_mobile(subscriber_mysql_session=subscriber_mysql_session)
-        home_delivery_stores_list = []
-        non_home_delivery_stores_list = []
-
-        for store in hyper_local:
-            store = (await get_data_by_id_utils(
-                table=StoreDetails,
-                field="mobile",
-                subscriber_mysql_session=subscriber_mysql_session,
-                data=store
-            )).store_id
-
-            if await subscriber_cart_bl(
-                store_id=store,
-                cart_data=medicine_list,
-                subscriber_mongodb_session=subscriber_mongodb_session
-            ):
-                store_data = await get_data_by_id_utils(
-                    table=StoreDetails,
-                    field="store_id",
-                    subscriber_mysql_session=subscriber_mysql_session,
-                    data=store
-                )
-                store_info = {
-                    "store_id": store,
-                    "store_name": store_data.store_name,
-                    "store_image": store_data.store_image,
-                    "store_address": store_data.address,
-                    "store_latitude": store_data.latitude,
-                    "store_longitude": store_data.longitude,
-                    "store_mobile": store_data.mobile
-                }
-                if store_data.delivery_options == "Home Delivery":
-                    home_delivery_stores_list.append(store_info)
-                else:
-                    non_home_delivery_stores_list.append(store_info)
-
-        return {"home_delivery_stores": home_delivery_stores_list, "In_stores": non_home_delivery_stores_list}
+        return medicine_list
     except HTTPException as http_exc:
         raise http_exc
     except SQLAlchemyError as e:
@@ -623,7 +587,7 @@ async def orders_list_bl(subscriber_mobile: str, subscriber_mysql_session: Async
             else:
                 delivered_orders.append(orders)
 
-        return orders_list #{"on_going_orders": on_going_orders, "delivered_orders": delivered_orders}
+        return {"on_going_orders": on_going_orders, "delivered_orders": delivered_orders}
 
     except SQLAlchemyError as e:
         logger.error(f"orders_list BL: {e}")
